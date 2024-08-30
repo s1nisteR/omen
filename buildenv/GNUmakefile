@@ -12,8 +12,8 @@ override LOCKFILE := lockfile
 # It is highly recommended to use a custom built cross toolchain to build a kernel.
 # We are only using "cc" as a placeholder here. It may work by using
 # the host system's toolchain, but this is not guaranteed.
-
-CC := cc
+ 
+CC := gcc
 LD := ld
 ASMC := nasm
 
@@ -221,28 +221,40 @@ cleanup:
 	@make setup
 
 buildimggpt_second_phase:
-	@echo "1" > $(BUILDDIR)/$(LOCKFILE)
-	@echo "Building GPT..."
-	@gcc -v
+	echo "1" > $(BUILDDIR)/$(LOCKFILE)
+	echo "Building GPT..."
+	echo $(shell gcc -v)
+	
+	truncate -s 100M $(ISODIR)/$(IMG)
+	rm -rf .mtoolsrc
+	echo "drive i: file=\"$(ISODIR)/$(IMG)\"" >> .mtoolsrc
+	mformat -F -i $(ISODIR)/$(IMG) ::
+	mdir -i $(ISODIR)/$(IMG)
 
-	@dd if=/dev/zero of=$(ISODIR)/$(IMG) bs=1M count=64
-	@echo Disk image created with size of 64MB
-	@mkfs.fat -F 32 $(ISODIR)/$(IMG)
-	@echo Disk image formatted with FAT32
-	@mmd -i $(ISODIR)/$(IMG) efi
-	@mmd -i $(ISODIR)/$(IMG) efi/boot
-	@mcopy -i $(ISODIR)/$(IMG) $(BOOTEFI) ::efi/boot
-	@mcopy -i $(ISODIR)/$(IMG) ./startup.nsh ::
-	@mcopy -i $(ISODIR)/$(IMG) $(BUILDDIR)/$(KERNEL) ::
-	@mcopy -i $(ISODIR)/$(IMG) ./limine.conf ::
-	@echo Files copied to disk image
+	mmd -i $(ISODIR)/$(IMG) ::/efi
+	mmd -i $(ISODIR)/$(IMG) ::/efi/boot
+
+	mcopy -i $(ISODIR)/$(IMG) $(BOOTEFI) ::/efi/boot
+	mcopy -i $(ISODIR)/$(IMG) ./startup.nsh ::
+	mcopy -i $(ISODIR)/$(IMG) $(BUILDDIR)/$(KERNEL) ::
+	mcopy -i $(ISODIR)/$(IMG) ./limine.conf ::
+
+	echo Disk mounted, creating system files
+	rm -f $(BUILDDIR)/$(LOCKFILE)
 
 buildimggpt:
 #if process.txt exists, call cleanup, else call buildimggpt_second_phase
-	@make clean
-	@make kernel
-	@echo "Building GPT..."
-	@make buildimggpt_second_phase;
+	if [ -f $(BUILDDIR)/$(LOCKFILE) ]; then \
+		echo "Lockfile exists, cleaning up..."; \
+		make cleanup; \
+	fi
+	
+	make clean
+	make kernel
+	echo "Building GPT..."
+
+	cp $(ISODIR)/$(IMG_RAW) $(ISODIR)/$(IMG)
+	make buildimggpt_second_phase;
 
 run:
 	$(QEMU) $(QFLAGSEXP)$(ISODIR)/$(IMG)
